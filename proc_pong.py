@@ -35,6 +35,33 @@ AI_SKILL_LEVELS = {
 
 SCORE_TO_WIN = 15
 
+# Color themes for paddles
+COLOR_THEMES = {
+    0: {"name": "Classic White", "primary": (245, 245, 245), "secondary": (200, 200, 200)},
+    1: {"name": "Neon Blue", "primary": (80, 180, 255), "secondary": (40, 100, 180)},
+    2: {"name": "Hot Pink", "primary": (255, 80, 180), "secondary": (180, 40, 120)},
+    3: {"name": "Lime Green", "primary": (100, 255, 100), "secondary": (50, 180, 50)},
+    4: {"name": "Golden", "primary": (255, 200, 80), "secondary": (200, 150, 40)},
+    5: {"name": "Purple", "primary": (180, 100, 255), "secondary": (120, 60, 180)},
+}
+
+# Countries with flag colors (top, middle, bottom stripes)
+COUNTRIES = {
+    0: {"name": "None", "colors": None},
+    1: {"name": "France", "colors": [(0, 85, 164), (255, 255, 255), (239, 65, 53)]},
+    2: {"name": "Germany", "colors": [(0, 0, 0), (221, 0, 0), (255, 206, 0)]},
+    3: {"name": "Italy", "colors": [(0, 140, 69), (255, 255, 255), (205, 33, 42)]},
+    4: {"name": "Spain", "colors": [(198, 11, 30), (255, 196, 0), (198, 11, 30)]},
+    5: {"name": "Brazil", "colors": [(0, 156, 59), (255, 223, 0), (0, 39, 118)]},
+    6: {"name": "Argentina", "colors": [(116, 172, 223), (255, 255, 255), (116, 172, 223)]},
+    7: {"name": "Japan", "colors": [(255, 255, 255), (188, 0, 45), (255, 255, 255)]},
+    8: {"name": "USA", "colors": [(191, 10, 48), (255, 255, 255), (0, 40, 104)]},
+    9: {"name": "UK", "colors": [(1, 33, 105), (255, 255, 255), (200, 16, 46)]},
+    10: {"name": "Netherlands", "colors": [(174, 28, 40), (255, 255, 255), (33, 70, 139)]},
+    11: {"name": "Belgium", "colors": [(0, 0, 0), (255, 233, 54), (239, 51, 64)]},
+    12: {"name": "Portugal", "colors": [(0, 102, 0), (255, 0, 0), (255, 0, 0)]},
+}
+
 # Level progression knobs
 MAX_OBS = 6
 MAX_WIND = 220.0  # pixels/sec^2 equivalent (applied as accel)
@@ -169,7 +196,7 @@ class PowerUp:
     """
     def __init__(self, x, y, ptype):
         self.pos = pygame.Vector2(x, y)
-        self.r = 22
+        self.r = 32  # Increased from 22 for easier hits
         self.ptype = ptype
         self.data = POWERUP_TYPES[ptype]
         self.alive = True
@@ -402,13 +429,46 @@ def main():
     pygame.display.set_caption("Procedural Pong")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("menlo", 22)
+    small_font = pygame.font.SysFont("menlo", 18)
     big = pygame.font.SysFont("menlo", 34, bold=True)
     title_font = pygame.font.SysFont("menlo", 48, bold=True)
 
-    # --- SKILL SELECTION MENU ---
+    # --- MULTI-PAGE MENU SYSTEM ---
+    # Menu state
+    menu_page = 0  # 0=difficulty, 1=player customize, 2=opponent customize
     ai_skill = 1  # Default to Medium
+    player_color = 0  # Classic White
+    player_country = 0  # None
+    opponent_color = 0  # Classic White  
+    opponent_country = 0  # None
+    
+    # Current selection on each page
+    page_selections = {
+        0: ai_skill,  # Difficulty page
+        1: 0,  # Player page: 0=color, 1=country, selection within those
+        2: 0,  # Opponent page: 0=color, 1=country
+    }
+    
+    # Sub-selections for customization pages
+    player_editing = "color"  # "color" or "country"
+    opponent_editing = "color"
+    
     in_menu = True
     
+    def draw_paddle_preview(x, y, color_idx, country_idx, height=80):
+        """Draw a preview of the paddle with color/country"""
+        country = COUNTRIES[country_idx]
+        color = COLOR_THEMES[color_idx]
+        
+        if country["colors"]:
+            # Draw flag stripes
+            stripe_h = height // 3
+            for i, c in enumerate(country["colors"]):
+                pygame.draw.rect(screen, c, (x, y + i * stripe_h, PADDLE_W * 2, stripe_h))
+        else:
+            # Draw solid color
+            pygame.draw.rect(screen, color["primary"], (x, y, PADDLE_W * 2, height), border_radius=6)
+            
     while in_menu:
         clock.tick(FPS)
         
@@ -420,14 +480,51 @@ def main():
                 if event.key == pygame.K_ESCAPE:
                     pygame.quit()
                     return
+                    
+                # Page navigation
+                elif event.key == pygame.K_LEFT or event.key == pygame.K_a:
+                    menu_page = max(0, menu_page - 1)
+                elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
+                    menu_page = min(2, menu_page + 1)
+                    
+                # Selection within page
                 elif event.key == pygame.K_UP or event.key == pygame.K_w:
-                    ai_skill = max(0, ai_skill - 1)
+                    if menu_page == 0:
+                        ai_skill = max(0, ai_skill - 1)
+                    elif menu_page == 1:
+                        if player_editing == "color":
+                            player_color = (player_color - 1) % len(COLOR_THEMES)
+                        else:
+                            player_country = (player_country - 1) % len(COUNTRIES)
+                    elif menu_page == 2:
+                        if opponent_editing == "color":
+                            opponent_color = (opponent_color - 1) % len(COLOR_THEMES)
+                        else:
+                            opponent_country = (opponent_country - 1) % len(COUNTRIES)
+                            
                 elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                    ai_skill = min(3, ai_skill + 1)
+                    if menu_page == 0:
+                        ai_skill = min(3, ai_skill + 1)
+                    elif menu_page == 1:
+                        if player_editing == "color":
+                            player_color = (player_color + 1) % len(COLOR_THEMES)
+                        else:
+                            player_country = (player_country + 1) % len(COUNTRIES)
+                    elif menu_page == 2:
+                        if opponent_editing == "color":
+                            opponent_color = (opponent_color + 1) % len(COLOR_THEMES)
+                        else:
+                            opponent_country = (opponent_country + 1) % len(COUNTRIES)
+                
+                # Tab to switch between color/country editing
+                elif event.key == pygame.K_TAB:
+                    if menu_page == 1:
+                        player_editing = "country" if player_editing == "color" else "color"
+                    elif menu_page == 2:
+                        opponent_editing = "country" if opponent_editing == "color" else "color"
+                
+                # Start game
                 elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
-                    in_menu = False
-                elif event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4]:
-                    ai_skill = event.key - pygame.K_1
                     in_menu = False
         
         # Render menu
@@ -435,36 +532,102 @@ def main():
         
         # Title
         title = title_font.render("PROCEDURAL PONG", True, ACCENT)
-        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 80))
+        screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 40))
         
-        # Subtitle
-        subtitle = font.render("Select AI Difficulty", True, WHITE)
-        screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, 160))
+        # Page tabs
+        pages = ["DIFFICULTY", "PLAYER", "OPPONENT"]
+        tab_width = 200
+        tab_start = WIDTH // 2 - (len(pages) * tab_width) // 2
+        for i, page_name in enumerate(pages):
+            color = ACCENT if i == menu_page else GRAY
+            tab_x = tab_start + i * tab_width
+            pygame.draw.rect(screen, color, (tab_x, 100, tab_width - 10, 36), border_radius=8, width=2 if i != menu_page else 0)
+            text = font.render(page_name, True, WHITE if i == menu_page else GRAY)
+            screen.blit(text, (tab_x + tab_width // 2 - text.get_width() // 2 - 5, 108))
         
-        # Skill options
-        for i, skill_data in AI_SKILL_LEVELS.items():
-            color = skill_data["color"] if i == ai_skill else GRAY
-            prefix = "> " if i == ai_skill else "  "
-            text = big.render(f"{prefix}{i + 1}. {skill_data['name']}", True, color)
-            y_pos = 220 + i * 60
-            screen.blit(text, (WIDTH // 2 - text.get_width() // 2, y_pos))
+        # Page content
+        content_y = 160
+        
+        if menu_page == 0:
+            # Difficulty selection
+            subtitle = font.render("Select AI Difficulty", True, WHITE)
+            screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, content_y))
             
-            # Show description for selected
-            if i == ai_skill:
-                desc_texts = {
-                    0: "Slow reactions, makes lots of mistakes",
-                    1: "Moderate challenge, good for beginners",
-                    2: "Fast and accurate, original difficulty",
-                    3: "Lightning reflexes, nearly unbeatable!"
-                }
-                desc = font.render(desc_texts[i], True, (180, 180, 190))
-                screen.blit(desc, (WIDTH // 2 - desc.get_width() // 2, y_pos + 35))
+            for i, skill_data in AI_SKILL_LEVELS.items():
+                color = skill_data["color"] if i == ai_skill else GRAY
+                prefix = "> " if i == ai_skill else "  "
+                text = big.render(f"{prefix}{skill_data['name']}", True, color)
+                y_pos = content_y + 50 + i * 55
+                screen.blit(text, (WIDTH // 2 - text.get_width() // 2, y_pos))
+                
+                if i == ai_skill:
+                    desc_texts = {
+                        0: "Slow reactions, makes lots of mistakes",
+                        1: "Moderate challenge, good for beginners",
+                        2: "Fast and accurate, original difficulty",
+                        3: "Lightning reflexes, nearly unbeatable!"
+                    }
+                    desc = small_font.render(desc_texts[i], True, (180, 180, 190))
+                    screen.blit(desc, (WIDTH // 2 - desc.get_width() // 2, y_pos + 32))
+                    
+        elif menu_page == 1:
+            # Player customization
+            subtitle = font.render("Customize Your Paddle (YOU - Left Side)", True, WHITE)
+            screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, content_y))
+            
+            # Color selection
+            color_label = "> COLOR" if player_editing == "color" else "  COLOR"
+            color_text = font.render(f"{color_label}: {COLOR_THEMES[player_color]['name']}", True, 
+                                     ACCENT if player_editing == "color" else GRAY)
+            screen.blit(color_text, (WIDTH // 2 - 180, content_y + 60))
+            
+            # Country selection
+            country_label = "> COUNTRY" if player_editing == "country" else "  COUNTRY"
+            country_text = font.render(f"{country_label}: {COUNTRIES[player_country]['name']}", True,
+                                       ACCENT if player_editing == "country" else GRAY)
+            screen.blit(country_text, (WIDTH // 2 - 180, content_y + 100))
+            
+            # Preview
+            preview_label = font.render("Preview:", True, WHITE)
+            screen.blit(preview_label, (WIDTH // 2 - 180, content_y + 160))
+            draw_paddle_preview(WIDTH // 2 - 180, content_y + 195, player_color, player_country, 100)
+            
+            # Instructions
+            tab_hint = small_font.render("Press TAB to switch between Color/Country", True, (140, 140, 150))
+            screen.blit(tab_hint, (WIDTH // 2 - tab_hint.get_width() // 2, content_y + 320))
+            
+        elif menu_page == 2:
+            # Opponent customization
+            subtitle = font.render("Customize Opponent Paddle (AI - Right Side)", True, WHITE)
+            screen.blit(subtitle, (WIDTH // 2 - subtitle.get_width() // 2, content_y))
+            
+            # Color selection
+            color_label = "> COLOR" if opponent_editing == "color" else "  COLOR"
+            color_text = font.render(f"{color_label}: {COLOR_THEMES[opponent_color]['name']}", True,
+                                     ACCENT if opponent_editing == "color" else GRAY)
+            screen.blit(color_text, (WIDTH // 2 - 180, content_y + 60))
+            
+            # Country selection
+            country_label = "> COUNTRY" if opponent_editing == "country" else "  COUNTRY"
+            country_text = font.render(f"{country_label}: {COUNTRIES[opponent_country]['name']}", True,
+                                       ACCENT if opponent_editing == "country" else GRAY)
+            screen.blit(country_text, (WIDTH // 2 - 180, content_y + 100))
+            
+            # Preview
+            preview_label = font.render("Preview:", True, WHITE)
+            screen.blit(preview_label, (WIDTH // 2 - 180, content_y + 160))
+            draw_paddle_preview(WIDTH // 2 - 180, content_y + 195, opponent_color, opponent_country, 100)
+            
+            # Instructions
+            tab_hint = small_font.render("Press TAB to switch between Color/Country", True, (140, 140, 150))
+            screen.blit(tab_hint, (WIDTH // 2 - tab_hint.get_width() // 2, content_y + 320))
         
-        # Controls hint
-        hint = font.render("Use UP/DOWN or W/S to select, ENTER or 1-4 to start", True, (120, 120, 130))
-        screen.blit(hint, (WIDTH // 2 - hint.get_width() // 2, HEIGHT - 60))
+        # Bottom controls hint
+        hint = font.render("LEFT/RIGHT: Switch Pages | UP/DOWN: Select | ENTER: Start Game", True, (120, 120, 130))
+        screen.blit(hint, (WIDTH // 2 - hint.get_width() // 2, HEIGHT - 50))
         
         pygame.display.flip()
+
 
     # --- GAME INITIALIZATION ---
     # Game state
@@ -754,9 +917,29 @@ def main():
         for o in level.obstacles:
             o.draw(screen)
 
-        # Paddles
-        pygame.draw.rect(screen, WHITE, player.rect, border_radius=10)
-        pygame.draw.rect(screen, WHITE, ai.rect, border_radius=10)
+        # Paddles - draw with custom colors/countries
+        def draw_game_paddle(paddle_rect, color_idx, country_idx):
+            country = COUNTRIES[country_idx]
+            color_theme = COLOR_THEMES[color_idx]
+            
+            if country["colors"]:
+                # Draw flag stripes (3 horizontal stripes)
+                stripe_h = paddle_rect.height // 3
+                for i, c in enumerate(country["colors"]):
+                    stripe_rect = pygame.Rect(paddle_rect.x, paddle_rect.y + i * stripe_h, 
+                                             paddle_rect.width, stripe_h + (1 if i < 2 else 0))
+                    pygame.draw.rect(screen, c, stripe_rect, border_radius=3 if i == 0 or i == 2 else 0)
+            else:
+                # Draw solid color with gradient effect
+                pygame.draw.rect(screen, color_theme["primary"], paddle_rect, border_radius=10)
+                # Add subtle highlight
+                highlight = pygame.Rect(paddle_rect.x + 2, paddle_rect.y + 2, 
+                                       paddle_rect.width - 4, paddle_rect.height // 3)
+                highlight_color = tuple(min(255, c + 30) for c in color_theme["primary"])
+                pygame.draw.rect(screen, highlight_color, highlight, border_radius=6)
+        
+        draw_game_paddle(player.rect, player_color, player_country)
+        draw_game_paddle(ai.rect, opponent_color, opponent_country)
 
         # Balls
         for b in balls:
@@ -785,13 +968,38 @@ def main():
         lvl = font.render(level.name, True, ACCENT)
         screen.blit(lvl, (18, 16))
 
+        # Wind speed in kph (pixels/sec * 0.36 = ~kph for immersion)
         wind_mag = level.wind.length()
-        wind_txt = font.render(
-            f"Wind: {wind_mag:.0f}" + ("" if wind_mag < 1 else f"  ({level.wind.x:.0f},{level.wind.y:.0f})"),
-            True,
-            (180, 180, 190)
-        )
+        wind_kph = wind_mag * 0.36
+        if wind_mag < 1:
+            wind_txt = font.render("Wind: 0 kph", True, (180, 180, 190))
+        else:
+            # Show direction as arrow
+            wind_angle = math.atan2(level.wind.y, level.wind.x)
+            if -0.4 < wind_angle < 0.4:
+                arrow = "→"
+            elif wind_angle > 2.7 or wind_angle < -2.7:
+                arrow = "←"
+            elif wind_angle > 0:
+                arrow = "↓" if wind_angle > 1.2 else "↘"
+            else:
+                arrow = "↑" if wind_angle < -1.2 else "↗"
+            wind_txt = font.render(f"Wind: {wind_kph:.0f} kph {arrow}", True, (180, 180, 190))
         screen.blit(wind_txt, (18, 44))
+        
+        # Ball speed indicator (show fastest ball's speed in kph)
+        if balls:
+            max_ball_speed = max(b.vel.length() for b in balls)
+            ball_kph = max_ball_speed * 0.36
+            # Color based on speed (green = slow, yellow = medium, red = fast)
+            if ball_kph < 200:
+                speed_color = (100, 220, 100)  # Green
+            elif ball_kph < 350:
+                speed_color = (220, 200, 80)   # Yellow
+            else:
+                speed_color = (220, 80, 80)    # Red
+            ball_speed_txt = font.render(f"Ball: {ball_kph:.0f} kph", True, speed_color)
+            screen.blit(ball_speed_txt, (WIDTH - ball_speed_txt.get_width() - 18, 16))
 
         hint = font.render("W/S or Up/Down to move | SPACE pause | R reset | ESC quit", True, (160, 160, 170))
         screen.blit(hint, (18, HEIGHT - 34))
